@@ -1,0 +1,375 @@
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+if _G.SystemRunning then
+    warn("System Is Running Before")
+    return
+end
+_G.SystemRunning = true
+local Workspace = game:GetService("Workspace")
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+local EggsFolder = Workspace:WaitForChild("GameAssets"):WaitForChild("Eggs")
+local MonsterService = ReplicatedStorage:WaitForChild("Packages"):WaitForChild("Knit"):WaitForChild("Services"):WaitForChild("MonsterService")
+local CanAttackRF = MonsterService:WaitForChild("RF"):WaitForChild("CanAttack")
+local RequestAttackRF = MonsterService:WaitForChild("RF"):WaitForChild("RequestAttack")
+local MAX_TARGET_DISTANCE = 50 
+local ATTACK_COOLDOWN = 0.5 
+local currentTarget = nil
+local lastAttackTime = 0
+local isRunning = true
+local CoreGui = game:GetService("CoreGui")
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "AutoFarmUI"  
+screenGui.ResetOnSpawn = false 
+screenGui.Parent = CoreGui
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 300, 0, 200)
+mainFrame.Position = UDim2.new(0.5, -150, 0.5, -100)
+mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+mainFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+mainFrame.BackgroundTransparency = 0.2
+mainFrame.BorderSizePixel = 0
+mainFrame.ClipsDescendants = true
+mainFrame.Parent = screenGui
+local titleBar = Instance.new("Frame")
+titleBar.Name = "TitleBar"
+titleBar.Size = UDim2.new(1, 0, 0, 30)
+titleBar.Position = UDim2.new(0, 0, 0, 0)
+titleBar.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+titleBar.BorderSizePixel = 0
+titleBar.Parent = mainFrame
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Name = "TitleLabel"
+titleLabel.Size = UDim2.new(1, 0, 1, 0)
+titleLabel.Position = UDim2.new(0, 0, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "Auto Farm System"
+titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextSize = 14
+titleLabel.Parent = titleBar
+local autoAttackButton = Instance.new("TextButton")
+autoAttackButton.Name = "AutoAttackButton"
+autoAttackButton.Size = UDim2.new(0.8, 0, 0, 40)
+autoAttackButton.Position = UDim2.new(0.1, 0, 0.2, 0)
+autoAttackButton.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+autoAttackButton.BorderSizePixel = 0
+autoAttackButton.Text = "BẬT AUTO ATTACK"
+autoAttackButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+autoAttackButton.Font = Enum.Font.GothamBold
+autoAttackButton.TextSize = 14
+autoAttackButton.Parent = mainFrame
+local eggSelectButton = Instance.new("TextButton")
+eggSelectButton.Name = "EggSelectButton"
+eggSelectButton.Size = UDim2.new(0.8, 0, 0, 30)
+eggSelectButton.Position = UDim2.new(0.1, 0, 0.45, 0)
+eggSelectButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+eggSelectButton.BorderSizePixel = 0
+eggSelectButton.Text = "Chọn trứng"
+eggSelectButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+eggSelectButton.Font = Enum.Font.Gotham
+eggSelectButton.TextSize = 14
+eggSelectButton.Parent = mainFrame
+local hatchButton = Instance.new("TextButton")
+hatchButton.Name = "HatchButton"
+hatchButton.Size = UDim2.new(0.8, 0, 0, 40)
+hatchButton.Position = UDim2.new(0.1, 0, 0.65, 0)
+hatchButton.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+hatchButton.BorderSizePixel = 0
+hatchButton.Text = "HATCH EGG"
+hatchButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+hatchButton.Font = Enum.Font.GothamBold
+hatchButton.TextSize = 14
+hatchButton.Parent = mainFrame
+local eggListFrame = Instance.new("Frame")
+eggListFrame.Name = "EggListFrame"
+eggListFrame.Size = UDim2.new(0.8, 0, 0, 0)
+eggListFrame.Position = UDim2.new(0.1, 0, 0.45, 30)
+eggListFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+eggListFrame.BorderSizePixel = 0
+eggListFrame.Visible = false
+eggListFrame.Parent = mainFrame
+local eggListLayout = Instance.new("UIListLayout")
+eggListLayout.Padding = UDim.new(0, 5)
+eggListLayout.Parent = eggListFrame
+local autoAttackEnabled = false
+local dragging = false
+local dragStartPos, frameStartPos
+local selectedEgg = nil
+local eggButtons = {}
+local currentEggs = {}
+local isPlayerAlive = true 
+local function toggleUI(visible)
+    if visible then
+        screenGui.Enabled = true
+        mainFrame.Visible = true
+    else
+        if eggListFrame.Visible then
+            toggleEggList()
+        end
+        screenGui.Enabled = false
+        mainFrame.Visible = false
+    end
+end
+local function isValidEgg(egg)
+    if not egg:IsA("Model") then return false end
+    local amountPart = egg:FindFirstChild("Base")
+    if not amountPart then return false end
+    amountPart = amountPart:FindFirstChild("TextPart")
+    if not amountPart then return false end
+    amountPart = amountPart:FindFirstChild("EggCost")
+    if not amountPart then return false end
+    amountPart = amountPart:FindFirstChild("Frame")
+    if not amountPart then return false end
+    amountPart = amountPart:FindFirstChild("Amount")
+    if not amountPart or not amountPart:IsA("TextLabel") or amountPart.Text == "" then return false end
+    return true, amountPart.Text
+end
+local function smartUpdateEggList()
+    local newEggs = {}
+    local hasChanges = false
+    for _, egg in ipairs(EggsFolder:GetChildren()) do
+        local isValid, amountText = isValidEgg(egg)
+        if isValid then
+            newEggs[egg.Name] = {egg = egg, amount = amountText}
+            
+            if not currentEggs[egg.Name] then
+                hasChanges = true
+            end
+        end
+    end
+    for eggName in pairs(currentEggs) do
+        if not newEggs[eggName] then
+            hasChanges = true
+            break
+        end
+    end    
+    if hasChanges then
+        for _, button in pairs(eggButtons) do
+            button:Destroy()
+        end
+        eggButtons = {}
+        for eggName, data in pairs(newEggs) do
+            local eggButton = Instance.new("TextButton")
+            eggButton.Name = eggName
+            eggButton.Size = UDim2.new(1, 0, 0, 30)
+            eggButton.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+            eggButton.BorderSizePixel = 0
+            eggButton.Text = eggName.." - "..data.amount
+            eggButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+            eggButton.Font = Enum.Font.GothamBold
+            eggButton.TextSize = 14
+            eggButton.TextXAlignment = Enum.TextXAlignment.Center
+            eggButton.Parent = eggListFrame
+            eggButton.MouseButton1Click:Connect(function()
+                selectedEgg = eggName
+                eggSelectButton.Text = eggName
+                toggleEggList()
+            end)
+            table.insert(eggButtons, eggButton)
+        end
+        currentEggs = newEggs
+        if eggListFrame.Visible then
+            eggListFrame.Size = UDim2.new(0.8, 0, 0, #eggButtons * 35)
+            mainFrame.Size = UDim2.new(0, 300, 0, 200 + (#eggButtons > 0 and #eggButtons * 35 or 0))
+        end
+    end
+end
+local function toggleEggList()
+    eggListFrame.Visible = not eggListFrame.Visible
+    if eggListFrame.Visible then
+        smartUpdateEggList()
+        mainFrame.Size = UDim2.new(0, 300, 0, 200 + #eggButtons * 35)
+    else
+        mainFrame.Size = UDim2.new(0, 300, 0, 200)
+    end
+end
+titleBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 and isPlayerAlive then
+        dragging = true
+        dragStartPos = input.Position
+        frameStartPos = mainFrame.Position
+        local tween = TweenService:Create(titleBar, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(50, 50, 50)})
+        tween:Play()
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement and isPlayerAlive then
+        local delta = input.Position - dragStartPos
+        mainFrame.Position = UDim2.new(frameStartPos.X.Scale, frameStartPos.X.Offset + delta.X,frameStartPos.Y.Scale, frameStartPos.Y.Offset + delta.Y)
+    end
+end)
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = false
+        local tween = TweenService:Create(titleBar, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(25, 25, 25)})
+        tween:Play()
+    end
+end)
+eggSelectButton.MouseButton1Click:Connect(function()
+    if not isPlayerAlive then return end
+    toggleEggList()
+end)
+hatchButton.MouseButton1Click:Connect(function()
+    if not isPlayerAlive then return end
+    
+    if not selectedEgg then
+        eggSelectButton.Text = "Chọn trứng trước!"
+        wait(1)
+        eggSelectButton.Text = "Chọn trứng"
+        return
+    end
+    local originalSize = hatchButton.Size
+    local tween1 = TweenService:Create(hatchButton, TweenInfo.new(0.1), {Size = originalSize - UDim2.new(0, 10, 0, 5)})
+    local tween2 = TweenService:Create(hatchButton, TweenInfo.new(0.1), {Size = originalSize})
+    tween1:Play()
+    tween1.Completed:Wait()
+    tween2:Play()
+    print(`Đang hatch trứng {selectedEgg}...`)
+    local args = {
+        selectedEgg,
+        1,
+        false,
+        {}
+    }
+ReplicatedStorage:WaitForChild("Packages"):WaitForChild("Knit"):WaitForChild("Services"):WaitForChild("EggService"):WaitForChild("RF"):WaitForChild("OpenEgg"):InvokeServer(unpack(args))
+end)
+local function addCorner(parent, radius)
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, radius)
+    corner.Parent = parent
+end
+addCorner(mainFrame, 8)
+addCorner(titleBar, 8)
+addCorner(autoAttackButton, 6)
+addCorner(eggSelectButton, 6)
+addCorner(hatchButton, 6)
+addCorner(eggListFrame, 6)
+local shadow = Instance.new("ImageLabel")
+shadow.Name = "Shadow"
+shadow.Size = UDim2.new(1, 10, 1, 10)
+shadow.Position = UDim2.new(0, -5, 0, -5)
+shadow.BackgroundTransparency = 1
+shadow.Image = "rbxassetid://1316045217"
+shadow.ImageColor3 = Color3.new(0, 0, 0)
+shadow.ImageTransparency = 0.8
+shadow.ScaleType = Enum.ScaleType.Slice
+shadow.SliceCenter = Rect.new(10, 10, 118, 118)
+shadow.ZIndex = -1
+shadow.Parent = mainFrame
+local function isValidTarget(target)
+    return target and 
+           target.Parent and 
+           target:FindFirstChild("Humanoid") and 
+           target.Humanoid.Health > 0
+end
+local function findPriorityTarget(player)
+    local character = player.Character or player.CharacterAdded:Wait()
+    local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+    local closestTarget = nil
+    local minDistance = math.huge
+    for _, model in ipairs(workspace:GetChildren()) do
+        if model:IsA("Model") and not Players:GetPlayerFromCharacter(model) then
+            local rootPart = model:FindFirstChild("HumanoidRootPart")
+            local humanoid = model:FindFirstChild("Humanoid")
+            if rootPart and humanoid and humanoid.Health > 0 then
+                local distance = (humanoidRootPart.Position - rootPart.Position).Magnitude
+                if distance < minDistance then
+                    minDistance = distance
+                    closestTarget = rootPart
+                end
+            end
+        end
+    end
+    return closestTarget, minDistance
+end
+
+local function generateSmartCFrame(targetPosition, playerPosition)
+    local direction = (targetPosition - playerPosition).Unit
+    local randomizedDir = direction + Vector3.new(
+        math.random(-10, 10)/100,
+        math.random(-5, 5)/100,
+        math.random(-10, 10)/100
+    ).Unit
+    return CFrame.new(
+        targetPosition.X,
+        targetPosition.Y,
+        targetPosition.Z,
+        randomizedDir.X, 0, randomizedDir.Z,
+        0, 1, 0,
+        -randomizedDir.Z, 0, randomizedDir.X
+    )
+end
+local function executeAttack(player, target)
+    if not isValidTarget(target.Parent) then return false end
+    CanAttackRF:InvokeServer(player)
+    local playerRoot = player.Character:WaitForChild("HumanoidRootPart")
+    local attackCFrame = generateSmartCFrame(target.Position, playerRoot.Position)
+    RequestAttackRF:InvokeServer(attackCFrame)
+    return true
+end
+local function mainLoop()
+local player = Players.LocalPlayer
+    while isRunning do
+        local now = tick()
+        if not currentTarget or 
+           not isValidTarget(currentTarget.Parent) or 
+           (player.Character and player.Character:FindFirstChild("HumanoidRootPart") and 
+           (currentTarget.Position - player.Character.HumanoidRootPart.Position).Magnitude > MAX_TARGET_DISTANCE) then            
+            local target, distance = findPriorityTarget(player)
+            if target then
+                currentTarget = target
+            end
+        end
+        if now - lastAttackTime >= ATTACK_COOLDOWN then
+            if executeAttack(player, currentTarget) then
+                lastAttackTime = now
+            end
+        end
+	wait(0.5)
+    end
+end
+local function stop()
+    isRunning = false
+end
+autoAttackButton.MouseButton1Click:Connect(function()
+    autoAttackEnabled = not autoAttackEnabled
+    if autoAttackEnabled then
+        autoAttackButton.Text = "TẮT AUTO ATTACK"
+        autoAttackButton.BackgroundColor3 = Color3.fromRGB(220, 50, 50)
+        print("Auto Attack: BẬT")
+	isRunning = true
+	mainLoop()    
+	else
+        autoAttackButton.Text = "BẬT AUTO ATTACK"
+        autoAttackButton.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+        print("Auto Attack: TẮT")
+	stop()
+    end
+end)
+local function onCharacterAdded(character)
+    isPlayerAlive = true
+    toggleUI(true)
+    local humanoid = character:WaitForChild("Humanoid")
+    humanoid.Died:Connect(function()
+        isPlayerAlive = false
+        toggleUI(false)
+    end)
+end
+player.CharacterAdded:Connect(onCharacterAdded)
+if player.Character then
+    onCharacterAdded(player.Character)
+end
+while true do
+    if isPlayerAlive then
+        smartUpdateEggList()
+    end
+    wait(5)
+end
